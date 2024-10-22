@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html> 
+  <head>
+    <title>Processing.JS inside Webpages: Template</title> 
+  </head>
+  <body>
+	<!--This draws the canvas on the webpage -->
+    <canvas id="mycanvas"></canvas> 
+  </body>
+ 
+  <!-- Include the processing.js library -->
+  <!-- See https://khanacademy.zendesk.com/hc/en-us/articles/202260404-What-parts-of-ProcessingJS-does-Khan-Academy-support- for differences -->
+  <script src="https://cdn.jsdelivr.net/processing.js/1.4.8/processing.min.js"></script> 
+  <script>
+  var programCode = function(processingInstance) {
+    with (processingInstance) {
+      size(1200, 600);  //should be 400 400
+      frameRate(90);
+        
+      // Paste code from Khan Academy here:
+      var player = {
+    speed: 5,
+    acceleration: 0.6, 
+    friction: 0.7,
+    jumpForce: 8,
+    bounciness: 0.1,
+    size: 20,
+    gravity: 0.5,
+    
+    powerups: {green: 0, purple: 0},
+    
+    start: {x:undefined, y: undefined}
+};
+
+var initialized = false;
+var char;
+/**********
+    LEVELS
+    
+    0 = Block
+    @ = Start Point
+    ! = lava
+    <, >, v, ^ = Spikes (in direction)
+    p = portal
+    m = magnet
+
+***********/
+
+
+var levels = [
+[/**LEVEL 0**/
+    '00000000000000mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm000000000000000000000000',
+    '0------------------------------------------------vvv--------',
+    '0------------------------------------------------',
+    '0----------------------------------------------',
+    '0----------------0---------------------------------------',
+    
+    '0---------------------------------------------------------',
+    
+    '0------------------0---------------------------------------',
+    
+    '0---------------------0-------------------------------------',
+    
+    '0------------------------0-----------------------------------',
+    
+    '0--------------------------0--------------------------------',
+    
+    '0-----------------------------------------------------------',
+    
+    '0------------------------------0---------------------------',
+    
+    '0--------------------------00------------------------------',
+    
+    '0----------------------0-----------------------------------',
+    
+    '0------------------0---------------------------------------',
+    
+    '0--------------0-------------------------------------------',
+    
+    '0----------------------------------------------------------',
+    
+    '0------------0-------------------------------------------0-----',
+    
+    '0---@-------------------------------------------------0!!!!!!0--------p',        
+    '00000000000000000--------------------------000000000000000000000000000000',
+],
+/**LEVEL 1**/
+[
+    '000000000000000000000000000000000000000000000000000000000000000000',
+    '0--@----vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv',
+    '0--00------------------------------------------------------------',
+    '0^^^-------------------------------------------------------------',
+    '0000-------------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0--------0-------------------------------------------------------',
+    '0----------------------------------------------------------------',
+    '0--------------------0------0------------0-----------------------',
+    '0--------------0-------------------0------------m----------------',
+    '0----------------------------------------------------------------',
+    '0-------------------------------------------------------p-------',
+    '0----------------------------------------------------0--0--------',
+    '0--------------------------------------------0-------------------',
+    '0-------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^',
+    '000000000000000000000000000000000000000000000000000000000000000000',
+
+],
+/***LEVEL 2***/
+[   
+    '00vvvvvv00mmmm00000000000mmmmmmmmmmmmmm0000000000000000vvvvvvvvvvv0000000000',
+    '0--------------------------------------------------------------------------0',
+    '0--------------------------------------------------------------------------0',
+    '0--------0-----------------------------------------------------------------0',
+    '0--p-----0--mmmmm-------------------0>-------------------------------------0',
+    '00000000000---------------0----0-------------------------------------------0',
+    '0-------------------------0------------------------------------------------0',
+    '0---------------0---------0-------mmmmm------------------------------------0',
+    '0-----------0-------------0--mmmm----------0-------------------------------0',
+    '0-------------------------0------------------------------------------------0',
+    '0--------------0----------0------------------------------------------------0',
+    '0--------0----------------00-----------------------------------------------0',
+    '0-------------mmmmmmmm-----------------------------------------------------0',
+    '0---------------------------0----0-----------------------------------------0',
+    '0------------------------------------0-------------------------------------0',
+    '0--------------------------------------------------------------------------0',
+    '0-@--------0-------------<0------<0----------------------------------------0',
+    '0------0----------------------0--------------------------------------------0',
+    '0--------------------------------------------------------------------------0',
+    '00000!!!!!!!!!!!!!!!!!000000000000000000000000000000000000000000000000000000',
+],
+/***LEVEL 3***/
+[
+    '',
+]
+];
+
+var level = 0;
+
+var lens;
+
+var keys = {};
+keyPressed = function() {
+    keys[keyCode] = keys[key.toString().toLowerCase()] = true;
+};
+
+keyReleased = function() {
+    keys[keyCode] = keys[key.toString().toLowerCase()] = false;
+};
+
+var loadLevel;
+
+
+var RRInt = function(rect1, rect2) {
+    return rect1.x < rect2.x + rect2.width &&                          rect1.x + rect1.width > rect2.x &&                              rect1.y < rect2.y + rect2.height &&                             rect1.y + rect1.height > rect2.y;
+};
+
+
+var createImageLoader = function(width, height, func) {
+    return function() {
+        background(255,255,255,0);
+        func();
+        return get(0,0,width, height);
+    };
+};
+
+var blockImg,
+spikeLeftImg, spikeUpImg, spikeDownImg, spikeRightImg, 
+lavaImg,
+charImg,charGreenImg, charPurpleImg,
+portalImg,
+magnetOnImg,
+magnetOffImg;
+
+
+
+
+
+
+
+var blocks = [];
+var Block = function(x,y) {
+    this.x = x;
+    this.y = y;
+    this.width = 30;
+    this.height = 30;
+    
+    this.draw = function() {
+        image(blockImg, this.x, this.y);
+    };
+};
+
+var magnets = [];
+var Magnet = function(x,y) {
+    this.x = x;
+    this.y = y;
+    this.width = 30;
+    this.height= 30;
+    
+    this.on = false;
+    this.draw = function() {
+        if (this.on) {
+            image(magnetOnImg, this.x, this.y);
+        }else {
+            image(magnetOffImg, this.x, this.y);
+        }
+    };
+};
+
+
+
+var spikes = [];
+var Spike = function(x,y,orient) {
+    this.x = x;
+    this.y = y;
+    this.width = 30;
+    this.height = 30;
+    
+    this.orient = orient;
+    
+    this.draw = function() {
+        switch(this.orient) {
+            case 'up':
+                image(spikeUpImg, this.x, this.y);
+                break;
+            case 'left':
+                image(spikeLeftImg, this.x, this.y);
+                break;
+            case 'right':
+                image(spikeRightImg, this.x, this.y);
+                break;
+            case 'down':
+                image(spikeDownImg, this.x, this.y);
+                break;
+        }
+    };
+};
+
+var lavas = [];
+var Lava = function(x,y) {
+    this.x = x;
+    this.y = y;
+    this.height = 30;
+    this.width = 30;
+    
+    this.draw = function() {
+        image(lavaImg, this.x, this.y);
+    };
+};
+
+var portals = [];
+var Portal = function(x,y) {
+    this.x = x;
+    this.y = y;
+    this.height = 30;
+    this.width = 30;
+    
+    this.draw = function() {
+        image(portalImg, this.x, this.y);
+    };
+};
+
+var powerups = [];
+var Powerup = function(x,y,color) {
+    this.x = x;
+    this.y = y;
+    this.height = 30;
+    this.width = 30;
+    this.show = true;
+    
+    this.color = color;
+    
+    this.draw= function() {
+        if (this.show) {
+            //if not touching player, then show
+            //also color
+        }
+    };
+    
+};
+
+//alert
+/****CREATE PURPLE/GREEN POWERUP BLOCKS AND WHAT THEY DO IN THE PLAYER.UPDATE***/
+
+
+
+var Player = function() {
+    this.x = player.start.x;
+    this.y = player.start.y;
+    this.width = 30;
+    this.height = 30;
+    
+    this.xv = 0;
+    this.yv = 0;
+    
+    this.canJump = false;
+    
+    
+    this.green = 0;
+    this.purple = 0;
+    
+    
+    this.draw = function() {
+        if (this.green>16 || (this.green>0 && this.green%3!==0)) {
+            image(charGreenImg,this.x,this.y);
+        } else if (this.purple>16 || (this.purple>0 && this.purple%3!==0)) {
+            image(charPurpleImg,this.x,this.y);
+        } else {
+            image(charImg, this.x, this.y);
+        }
+    };
+    
+    this.update = function() {
+        var right = keys[RIGHT] || keys.d;
+        var left = keys[LEFT] || keys.a;
+        var up = keys[UP] || keys.w;
+        
+        var greenKey = keys.g;
+        var purpleKey = keys.p;
+
+        
+        if (left) {
+            this.xv -= player.acceleration;
+        } 
+        if (right) {
+            this.xv += player.acceleration;
+        } 
+        
+        if (!left && !right) {
+            this.xv *= player.friction;
+        }
+        
+        if (up && this.canJump) {
+            this.yv -= player.jumpForce;
+        }
+
+        if (greenKey && player.powerups.green >0&& this.purple ===0) {
+            this.green = 1500;
+            player.powerups.green--;
+        }
+        if (purpleKey && player.powerups.purple>0&& this.green===0) {
+            this.purple = 1500;
+            player.powerups.purple--;
+        }
+        
+
+        
+        this.canJump = false;
+        this.xv = constrain(this.xv,-player.speed, player.speed);
+        this.x += this.xv;
+        this.collide(this.xv, 0);
+        
+        this.y += this.yv;
+        this.collide(0, this.yv);
+        this.yv += player.gravity;
+        
+
+        if (this.y > 640) {
+            this.x = player.start.x;
+            this.y = player.start.y;
+            this.green = 0;
+            this.purple = 0;
+            
+        }
+        
+        if (this.green > 0) {
+            this.green--;
+        }
+        if (this.purple>0) {
+            this.purple--;
+        }
+        
+    };
+    
+    
+    this.collide = function(xv, yv) {
+        for (var i in blocks) {
+            var block = blocks[i];
+            if (!RRInt(this, block)) {
+                continue;
+            }
+            
+            if (xv<0) {
+                this.x = block.x + block.width;
+                this.xv *= -player.bounciness;
+            }
+            
+            if (xv>0) {
+                this.x = block.x - this.width;
+                this.xv *= -player.bounciness;
+            }
+            
+            if (yv<0) {
+                this.y = block.y + block.height;
+                this.yv *= -player.bounciness;
+                
+                this.canJump = false;
+            }
+            
+            if (yv>0) {
+                this.y = block.y - this.height;
+                this.yv *= -player.bounciness;
+                
+                this.canJump = true;
+            }
+        }
+        
+        for (var i in magnets) {
+            var magnet = magnets[i];
+            magnet.on = false;
+            if (!RRInt(this, magnet)) {
+                continue;
+            }
+            
+            if (xv<0) {
+                this.x = magnet.x+magnet.width;
+                this.xv *= -player.bounciness;
+            }
+            
+            if (xv > 0) {
+                this.x = magnet.x-this.width;
+                this.xv *= -player.bounciness;
+            }
+            
+            if (yv<0) {
+                this.y = magnet.y + magnet.height;
+                this.yv *= -player.bounciness;
+                
+                this.canJump = true;
+                magnet.on = true;
+            }
+            
+            if (yv>0) {
+                this.y = magnet.y - this.height;
+                this.yv *= -player.bounciness;
+                
+                this.canJump = true;
+            }
+        }
+        
+        
+        for(var i in spikes) {
+            var spike = spikes[i];
+            if (!RRInt(this, spike)||this.green>0) {
+                continue;
+            }
+            
+            this.x = player.start.x;
+            this.y = player.start.y;
+            this.green = 0;
+            this.purple = 0;
+        }
+        
+        for(var i in lavas) {
+            var lava = lavas[i];
+            if (!RRInt(this, lava)||this.green>0) {
+                continue;
+            }
+            
+            this.x = player.start.x;
+            this.y = player.start.y;
+            this.green = 0;
+            this.purple = 0;
+            
+        }
+        
+        for(var i in portals) {
+            var portal = portals[i];
+            if (!RRInt(this, portal)) {
+                continue;
+            }
+            
+            level++;
+            loadLevel(levels[level]);
+        }
+        
+    };
+};
+
+
+char = new Player();
+
+lens = {
+    right : -Infinity,
+    
+    apply : function() {
+        var x = 300-char.x;
+        //var right = -Infinity;
+        x = constrain(x, lens.right, 0);
+        translate(x, 0);
+    },
+    
+};
+
+
+loadLevel = function(which) {
+    spikes = [];
+    lavas = [];
+    blocks = [];
+    magnets = [];
+    
+    
+    var longestString = '';
+    
+    
+    
+    for (var col = 0; col < which.length; col++) {
+        if (which[col].length > longestString.length) {
+            longestString = which[col];
+        }
+        for (var row = 0; row < which[col].length; row++) {
+            var c = which[col].charAt(row);
+            switch (c) {
+                case '0':
+                    blocks.push(new Block(row * 30, col * 30));
+                break;
+                case 'm':
+                    magnets.push(new Magnet(row*30, col*30));
+                    break;
+                case '@':
+                    
+                    player.vx = 0;
+                    player.vy = 0;
+                    player.jumping = true;
+                    
+                    player.start.x = row*30;
+                    player.start.y = col*30;
+                    
+                    
+                    char.x = player.start.x;
+                    char.y = player.start.y;
+
+                    
+                break;
+                case '!':
+                    lavas.push(new Lava(row*30, col*30));
+                    break;
+                case '<':
+                    spikes.push(new Spike(row*30,col*30, 'left'));
+                    break;
+                case '>':
+                    spikes.push(new Spike(row*30,col*30, 'right'));
+                    break;
+                case '^':
+                    spikes.push(new Spike(row*30,col*30, 'up'));
+                    break;
+                case 'v':
+                    spikes.push(new Spike(row*30,col*30, 'down'));
+                    break;
+                    
+                case 'p':
+                    portals.push(new Portal(row*30,col*30));
+                    break;
+                
+            }
+        }
+    }
+
+    
+    
+    /* Set the lens's stop position. */
+    lens.right = Math.min(longestString.length * -30 + 600, 0     );
+};
+
+
+
+
+
+var loadBlockImg = createImageLoader(30,30,function() {
+    noStroke();
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,50);
+        rect(0,0,i*5,i*5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,30);
+        rect(30,30,i*-5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,10);
+        rect(0,30,i*5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,45);
+        rect(30,0,i*-5,i*5);
+    }
+});
+
+var loadMagnetOffImg = createImageLoader(30,30,function() {
+    noStroke();
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,10);
+        rect(0,0,i*3,i*3);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,70);
+        rect(30,30,i*-5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,70);
+        rect(0,30,i*5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,10);
+        rect(30,0,i*-3,i*3);
+    }
+    fill(164, 39, 217,100);
+    rect(12.5,12.5,5,5);
+});
+
+var loadMagnetOnImg = createImageLoader(30,30,function() {
+    noStroke();
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,10);
+        rect(0,0,i*3,i*3);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,70);
+        rect(30,30,i*-5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,70);
+        rect(0,30,i*5,i*-5);
+    }
+    
+    for (var i = 0; i<7; i++) {
+        fill(0, 0, 0,10);
+        rect(30,0,i*-3,i*3);
+    }
+    fill(9, 255, 0,100);
+    rect(12.5,12.5,5,5);
+});
+
+
+
+var loadSpikeUpImg = createImageLoader(30,30,function() {
+    noStroke();
+    fill(61, 61, 61);
+    triangle(0,30,15/2,0,15/2,30);
+    triangle(15+(15/2),30,15+(15/2),0,15,30);
+    fill(209, 209, 209);
+    triangle(15,30,15/2,0,15/2,30);
+    triangle(30,30,15+(15/2),0,15+(15/2),30);
+
+});
+
+var loadSpikeDownImg = createImageLoader(30,30,function() {
+    pushMatrix();
+    scale(1,-1);
+    translate(0,-30);
+    noStroke();
+    fill(61, 61, 61);
+    triangle(0,30,15/2,0,15/2,30);
+    triangle(15+(15/2),30,15+(15/2),0,15,30);
+    fill(209, 209, 209);
+    triangle(15,30,15/2,0,15/2,30);
+    triangle(30,30,15+(15/2),0,15+(15/2),30);
+    popMatrix();
+});
+
+var loadSpikeRightImg = createImageLoader(30,30,function() {
+    pushMatrix();
+    translate(30,0);
+    rotate(90);
+    noStroke();
+    fill(61, 61, 61);
+    triangle(0,30,15/2,0,15/2,30);
+    triangle(15+(15/2),30,15+(15/2),0,15,30);
+    fill(209, 209, 209);
+    triangle(15,30,15/2,0,15/2,30);
+    triangle(30,30,15+(15/2),0,15+(15/2),30);
+    popMatrix();
+});
+
+var loadSpikeLeftImg = createImageLoader(30,30,function() {
+    pushMatrix();
+    translate(0,30);
+    rotate(-90);
+    noStroke();
+    fill(61, 61, 61);
+    triangle(0,30,15/2,0,15/2,30);
+    triangle(15+(15/2),30,15+(15/2),0,15,30);
+    fill(209, 209, 209);
+    triangle(15,30,15/2,0,15/2,30);
+    triangle(30,30,15+(15/2),0,15+(15/2),30);
+    popMatrix();
+});
+
+var loadlavaImg = createImageLoader(30,30,function() {
+    noStroke();
+
+    var pDarkC = color(199, 33, 0);
+    var pLightC = color(255, 58, 48);
+    
+    for (var i = 0; i<30;i++) {
+        fill(lerpColor(pLightC, pDarkC, i/29));
+        rect(0,i,30,1);
+    }
+});
+
+var loadCharImg = createImageLoader(30,30,function() {
+    fill(0, 0, 0);
+    rect(0,0,30,30);
+    
+    stroke(37, 217, 49,30);
+    strokeWeight(6);
+    
+    pushMatrix();
+    translate(15,15);
+    for (var i = 0; i<8; i++) {
+        rotate(360/8);
+        
+        line(0,0,20,0);
+    }
+    popMatrix();
+    
+});
+
+var loadCharGreenImg = createImageLoader(30,30,function() {
+    noStroke();
+    fill(0, 0, 0);
+    rect(0,0,30,30);
+    
+    stroke(37, 217, 49,150);
+    strokeWeight(6);
+    
+    pushMatrix();
+    translate(15,15);
+    for (var i = 0; i<8; i++) {
+        rotate(360/8);
+        
+        line(0,0,20,0);
+    }
+    popMatrix();
+    
+});
+
+var loadCharPurpleImg = createImageLoader(30,30,function() {
+    noStroke();
+    fill(0, 0, 0);
+    rect(0,0,30,30);
+    
+    stroke(164, 39, 217,150);
+    strokeWeight(6);
+    
+    pushMatrix();
+    translate(15,15);
+    for (var i = 0; i<4; i++) {
+        rotate(360/4);
+        
+        line(0,0,20,0);
+    }
+    popMatrix();
+    
+});
+
+
+
+var loadPortalImg = createImageLoader(30,30,function() {
+    background(255, 255, 255,0);
+    stroke(238, 0, 255,170);
+    strokeWeight(7);
+    ellipseMode(CORNER);
+    fill(78, 0, 168,250);
+    ellipse(4.5,4.5,21.5,21.5);
+
+});
+
+
+level = 0;
+
+loadLevel(levels[level]);
+draw = function() {
+    if (!initialized) {
+        blockImg = loadBlockImg();
+        spikeLeftImg = loadSpikeLeftImg();
+        spikeUpImg = loadSpikeUpImg();
+        spikeDownImg = loadSpikeDownImg();
+        spikeRightImg = loadSpikeRightImg();
+        lavaImg = loadlavaImg();
+        charImg = loadCharImg();
+        portalImg = loadPortalImg();
+        magnetOffImg = loadMagnetOffImg();
+        magnetOnImg = loadMagnetOnImg();
+        charPurpleImg = loadCharPurpleImg();
+        charGreenImg = loadCharGreenImg();
+        
+        
+        char.x = player.start.x;
+        char.y = player.start.y;
+        
+        initialized = true;
+        
+        
+    }
+    background(232, 232, 232);
+    pushMatrix();
+    lens.apply();
+    for (var i in blocks) {
+        var block = blocks[i];
+        block.draw();
+    }
+    for (var i in spikes) {
+        var spike = spikes[i];
+        spike.draw();
+    }
+    for (var i in lavas) {
+        var lava = lavas[i];
+        lava.draw();
+    }
+    for (var i in portals) {
+        var portal = portals[i];
+        portal.draw();
+    }
+    
+    for (var i in magnets) {
+        var magnet = magnets[i];
+        magnet.draw();
+    }
+    
+    char.update();
+    char.draw();
+    popMatrix();
+    
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    }};
+
+  // Get the canvas that ProcessingJS will use
+  var canvas = document.getElementById("mycanvas"); 
+  // Pass the function to ProcessingJS constructor
+  var processingInstance = new Processing(canvas, programCode); 
+  </script>
+</html>
